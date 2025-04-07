@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from datetime import datetime
+from pytz import timezone
+import time
+import threading
 
 # Configurações da Página
 st.set_page_config(
@@ -41,10 +44,25 @@ st.markdown(
         background-color: #FF0000;
         font-weight: bold;
     }
+    .relogio-industrial {
+        background-color: black;
+        color: #00FF00;
+        font-size: 50px;
+        font-weight: bold;
+        text-align: center;
+        padding: 10px;
+        border-radius: 10px;
+        font-family: 'Courier New', Courier, monospace;
+    }
     </style>
     """,
     unsafe_allow_html=True
 )
+
+# Função para obter hora atual no fuso correto
+def hora_atual_sp():
+    fuso_sp = timezone('America/Sao_Paulo')
+    return datetime.now(fuso_sp)
 
 # Página Inicial
 if st.session_state.pagina == 'inicio':
@@ -53,7 +71,7 @@ if st.session_state.pagina == 'inicio':
     col_logo_esq, col_meio, col_logo_dir = st.columns([1, 2, 1])
 
     with col_logo_esq:
-        st.image('image.png', width=380)  # Logo THMAX
+        st.image('image.png', width=380)
 
     with col_meio:
         st.markdown("<h1>Bem-vindo ao sistema de checklist</h1>", unsafe_allow_html=True)
@@ -66,9 +84,9 @@ if st.session_state.pagina == 'inicio':
             st.session_state.pagina = 'sistema'
 
     with col_logo_dir:
-        st.image('REDSCALE.png', width=380)  # Logo REDSCALE
+        st.image('REDSCALE.png', width=380)
 
-# Página Interna (Checklist e Dashboards)
+# Página Interna
 elif st.session_state.pagina == 'sistema':
     # Banco de dados
     try:
@@ -78,24 +96,36 @@ elif st.session_state.pagina == 'sistema':
     except FileNotFoundError:
         df = pd.DataFrame(columns=['Data', 'Hora', 'Operador', 'Atividade', 'Status', 'Observação'])
 
-    data_hoje = datetime.now().date().strftime("%Y-%m-%d")
+    data_hoje = hora_atual_sp().date().strftime("%Y-%m-%d")
     df_hoje = df[df['Data'] == data_hoje]
 
-    # Botão Bonito de Voltar🔙
-    voltar = st.button(' Voltar', key='voltar_topo')
+    # Relógio Digital Industrial
+    relogio_area = st.empty()
 
+    def atualizar_relogio():
+        while True:
+            hora_now = hora_atual_sp().strftime("%H:%M:%S")
+            relogio_area.markdown(
+                f"<div class='relogio-industrial'>🕒 {hora_now}</div>",
+                unsafe_allow_html=True
+            )
+            time.sleep(1)
+
+    threading.Thread(target=atualizar_relogio, daemon=True).start()
+
+    # Botão Voltar
+    voltar = st.button('🔙 Voltar', key='voltar_topo')
     if voltar:
         st.session_state.pagina = 'inicio'
 
-    # Barra lateral
+    # Barra Lateral
     st.sidebar.image('image.png', width=300)
     pagina_selecionada = st.sidebar.radio('Menu', ['✅ Checklist', '📊 Dashboards'])
 
     lista_funcionarios = ["Mateus", "João", "Maria", "Carlos", "Ana"]
     operador = st.sidebar.selectbox('Selecione seu nome', lista_funcionarios)
-    data_input = st.sidebar.date_input('Data', datetime.now())
+    data_input = st.sidebar.date_input('Data', hora_atual_sp())
 
-    # Página de Preenchimento
     if pagina_selecionada == '✅ Checklist':
         if operador:
             df_operador = df_hoje[df_hoje['Operador'] == operador]
@@ -125,11 +155,11 @@ elif st.session_state.pagina == 'sistema':
 
         if st.button('Salvar Checklist'):
             if operador and atividades_realizadas:
-                hora_atual = datetime.now().strftime("%H:%M:%S")
+                hora_atual_formatada = hora_atual_sp().strftime("%H:%M:%S")
 
                 df_atividades = pd.DataFrame({
                     'Data': [data_input] * len(atividades_realizadas),
-                    'Hora': [hora_atual] * len(atividades_realizadas),
+                    'Hora': [hora_atual_formatada] * len(atividades_realizadas),
                     'Operador': [operador] * len(atividades_realizadas),
                     'Atividade': atividades_realizadas,
                     'Status': ['Concluído'] * len(atividades_realizadas),
@@ -152,7 +182,6 @@ elif st.session_state.pagina == 'sistema':
         else:
             st.info('Nenhum checklist preenchido hoje.')
 
-    # Página de Dashboards
     elif pagina_selecionada == '📊 Dashboards':
         st.markdown("---")
         st.subheader('📊 Dashboards de Desempenho')
@@ -190,7 +219,7 @@ elif st.session_state.pagina == 'sistema':
         st.subheader('⏰ Horário de Maior Movimento')
 
         if not df_hoje.empty:
-            df_hoje['Hora'] = pd.to_datetime(df_hoje['Hora'], format='%H:%M:%S')
+            df_hoje['Hora'] = pd.to_datetime(df_hoje['Hora'], format='%H:%M:%S', errors='coerce')
             df_hoje['Hora_Somente'] = df_hoje['Hora'].dt.hour
 
             resumo_hora = df_hoje['Hora_Somente'].value_counts().reset_index()
